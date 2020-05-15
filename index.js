@@ -1,68 +1,47 @@
+const config = require("config");
 const Joi = require("joi");
+const startUpDebugger = require("debug")("app:startup");
+const dbDebugger = require("debug")("app:db");
 const express = require("express");
+const helmet = require("helmet");
+const morgan = require("morgan");
+const courses = require("./routes/courses");
+const home = require("./routes/home");
 const app = express();
+app.set("view engine", "pug");
+
+//path of all views
+app.set("views", "./views"); //default
+const logger = require("./middleware/logger");
+const auth = require("./middleware/auth");
+
 app.use(express.json());
-const courses = [
-  { id: 1, name: "course 1" },
-  { id: 2, name: "course 2" },
-  { id: 3, name: "course 3" },
-];
-app.get("/", (req, res) => {
-  res.json({
-    message: "Hello",
-  });
-});
+app.use(express.urlencoded({ extended: true })); // x-form-encoded
+app.use(express.static("public")); // use to serve static file i.e localhost:5000/readme.txt; since you declared 'public' it will start searching from that path, no need to include public word on url
+app.use(helmet());
 
-app.get("/api/courses/:id", (req, res) => {
-  const course = courses.find((c) => c.id === parseInt(req.params.id));
-  if (!course) res.status(404).send("Course not found");
+//Routes
+app.use("/", home);
+app.use("/api/courses", courses);
+app.use(logger);
+app.use(auth);
 
-  res.json(course);
-  //api/courses/:id?sortBy=name
-  //res.send(req.query.sortBy);
-});
+//Configuration
+console.log("Application Name:" + config.get("name"));
+console.log("Mail Server:" + config.get("mail.host"));
+console.log("Mail Password:" + config.get("mail.password"));
 
-app.post("/api/courses", (req, res) => {
-  const { error } = validateCourse(req.body);
-  if (error) return res.status(400).send(error.details[0].message);
-  const course = {
-    id: courses.length + 1,
-    name: req.body.name,
-  };
-  courses.push(course);
-  res.json(course);
-});
+if (app.get("env") === "development") {
+  app.use(morgan("tiny"));
+  startUpDebugger("Morgan enabled...");
+}
 
-app.put("/api/courses/:id", (req, res) => {
-  const course = courses.find((c) => c.id === parseInt(req.params.id));
-  if (!course) return res.status(404).send("Course not found");
+//db work
+//$Env:DEBUG = "app:startup,app:db" this for windows powershell
+//export DEBUG=app:startup,app:db" this for MAc
+dbDebugger("Connected to database...");
 
-  const { error } = validateCourse(req.body);
-  if (error) {
-    res.status(400).send(error.details[0].message);
-    return;
-  }
-  course.name = req.body.name;
-  res.send(course);
-});
-
-app.delete("/api/courses/:id", (req, res) => {
-  const course = courses.find((c) => c.id === parseInt(req.params.id));
-  if (!course) return res.status(404).send("Course not found");
-
-  const index = courses.indexOf(course);
-  courses.splice(index, 1);
-
-  res.send(course);
-});
 const port = process.env.PORT || 5000;
 app.listen(process.env.PORT || 5000, () =>
   console.log(`Listening on port ${port}...`)
 );
-
-function validateCourse(course) {
-  const schema = {
-    name: Joi.string().min(3).required(),
-  };
-  return Joi.validate(course, schema);
-}
